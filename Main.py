@@ -5,13 +5,22 @@ from openpyxl import Workbook
 import os
 from datetime import datetime
 
-# Конфигурация
-TOKEN = '8712850028:AAFHOX1kcw_5vNYryKjp0KxR3G8YmhJigtg'  # Вставьте токен вашего бота
+# Получаем токен из переменных окружения
+TOKEN = os.environ.get('TOKEN')
+if not TOKEN:
+    # Для локального тестирования можно указать токен напрямую
+    TOKEN = '8712850028:AAFHOX1kcw_5vNYryKjp0KxR3G8YmhJigtg'  # Вставьте ваш токен
+
 bot = telebot.TeleBot(TOKEN)
 
 # Состояния пользователей
 user_states = {}
 user_data = {}
+
+# Множество для хранения ID пользователей, уже отправивших заявку
+# ВАЖНО: При перезапуске бота это множество очистится!
+# Для продакшена лучше хранить в Excel/БД
+submitted_users = set()
 
 # Функция для инициализации Excel файла
 def init_excel():
@@ -19,38 +28,137 @@ def init_excel():
         wb = Workbook()
         ws = wb.active
         ws.title = "Заявки"
-        headers = ['Дата', 'Username', 'Желаемая должность', 'Опыт работы', 'Статус']
+        headers = ['Дата', 'User ID', 'Username', 'Желаемая должность', 'Опыт работы', 'Статус']
         ws.append(headers)
         wb.save('applications.xlsx')
+        
+        # Создаем отдельный лист для отслеживания пользователей
+        ws_users = wb.create_sheet("Пользователи")
+        ws_users.append(['User ID', 'Username', 'Дата заявки', 'Статус'])
+        wb.save('applications.xlsx')
+
+# Функция для проверки, отправлял ли пользователь заявку
+def has_user_submitted(user_id):
+    # Проверяем в памяти
+    if user_id in submitted_users:
+        return True
+    
+    # Проверяем в Excel файле
+    try:
+        wb = openpyxl.load_workbook('applications.xlsx')
+        if 'Пользователи' in wb.sheetnames:
+            ws_users = wb['Пользователи']
+            for row in range(2, ws_users.max_row + 1):
+                if ws_users.cell(row=row, column=1).value == user_id:
+                    submitted_users.add(user_id)  # Кэшируем в память
+                    return True
+    except:
+        pass
+    
+    return False
+
+# Функция для отметки пользователя как отправившего заявку
+def mark_user_as_submitted(user_id, username):
+    submitted_users.add(user_id)
+    
+    try:
+        wb = openpyxl.load_workbook('applications.xlsx')
+        if 'Пользователи' not in wb.sheetnames:
+            ws_users = wb.create_sheet("Пользователи")
+            ws_users.append(['User ID', 'Username', 'Дата заявки', 'Статус'])
+        else:
+            ws_users = wb['Пользователи']
+        
+        next_row = ws_users.max_row + 1
+        ws_users.cell(row=next_row, column=1, value=user_id)
+        ws_users.cell(row=next_row, column=2, value=username)
+        ws_users.cell(row=next_row, column=3, value=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        ws_users.cell(row=next_row, column=4, value='Заявка отправлена')
+        
+        wb.save('applications.xlsx')
+    except Exception as e:
+        print(f"Ошибка при сохранении пользователя: {e}")
 
 # Функция для сохранения данных в Excel
-def save_to_excel(username, position, experience):
-    wb = openpyxl.load_workbook('applications.xlsx')
-    ws = wb.active
-    
-    # Ищем следующую свободную строку
-    next_row = ws.max_row + 1
-    
-    # Записываем данные
-    ws.cell(row=next_row, column=1, value=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    ws.cell(row=next_row, column=2, value=username)
-    ws.cell(row=next_row, column=3, value=position)
-    ws.cell(row=next_row, column=4, value=experience)
-    ws.cell(row=next_row, column=5, value='Новая')
-    
-    wb.save('applications.xlsx')
+def save_to_excel(user_id, username, position, experience):
+    try:
+        wb = openpyxl.load_workbook('applications.xlsx')
+        ws = wb.active
+        
+        next_row = ws.max_row + 1
+        
+        ws.cell(row=next_row, column=1, value=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        ws.cell(row=next_row, column=2, value=user_id)
+        ws.cell(row=next_row, column=3, value=username)
+        ws.cell(row=next_row, column=4, value=position)
+        ws.cell(row=next_row, column=5, value=experience)
+        ws.cell(row=next_row, column=6, value='Новая')
+        
+        wb.save('applications.xlsx')
+        
+        # Отмечаем пользователя как отправившего заявку
+        mark_user_as_submitted(user_id, username)
+        
+        return True
+    except Exception as e:
+        print(f"Ошибка при сохранении заявки: {e}")
+        return False
 
-# Приветственное сообщение со списком вакансий
+# Функция для отправки финального сообщения с благодарностью и ссылками
+def send_thank_you_message(chat_id):
+    # ЗДЕСЬ ВСТАВЬТЕ ВАШИ ССЫЛКИ (3 штуки)
+    links = """
+🔗 <b>Полезные ссылки:</b>
+
+1. <a href="https://t.me/YPOLN0MOCHEN">Наш Telegram канал</a> - будьте в курсе новостей
+2. <a href="https://t.me/+1lSqpBU0vtUyNTZh">Наша команда(обязательно подать заявку)</a> -了解更多 о компании
+3. <a href="https://web.telegram.org/k/#@CTPAX_D0K7EP0B">Мой ЛС</a> - если есть вопросы
+    """
+    
+    thank_you_text = f"""
+🎉 <b>Спасибо за вашу заявку!</b>
+
+Мы получили вашу анкету и уже начали её обработку. 
+Наши специалисты свяжутся с вами в ближайшее время (обычно в течение 24 часов).
+
+Пока вы ждёте ответа, предлагаем ознакомиться с нашими ресурсами:
+
+{links}
+
+💬 Если у вас возникнут вопросы, не стесняйтесь обращаться!
+    """
+    
+    # Создаем клавиатуру с кнопками для ссылок
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    # ЗДЕСЬ ВСТАВЬТЕ ВАШИ ССЫЛКИ В КНОПКИ
+    btn1 = types.InlineKeyboardButton("📱 Наш Telegram канал", url="https://t.me/YPOLN0MOCHEN")
+    btn2 = types.InlineKeyboardButton("🌐 Наша команда(обязательно подать заявку)", url="https://t.me/+1lSqpBU0vtUyNTZh")
+    btn3 = types.InlineKeyboardButton("💬 Мой ЛС", url="https://web.telegram.org/k/#@CTPAX_D0K7EP0B")
+    
+    markup.add(btn1, btn2, btn3)
+    
+    bot.send_message(chat_id, thank_you_text, parse_mode='HTML', reply_markup=markup)
+
+# Приветственное сообщение
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
+    user_id = message.chat.id
+    
+    # Проверяем, отправлял ли пользователь уже заявку
+    if has_user_submitted(user_id):
+        # Если уже отправлял, показываем сообщение с благодарностью и ссылками
+        send_thank_you_message(user_id)
+        return
+    
     # ЗДЕСЬ НУЖНО ЗАПОЛНИТЬ СПИСОК ВАКАНСИЙ
-    # Впишите актуальные вакансии между кавычками
     vacancies_list = """
-    • Менеджер по продажам
-    • Маркетолог
-    • Разработчик Python
-    • Дизайнер
-    • Копирайтер
+    • Трейдер
+    • Закупщик НФТ или крипты
+    • Програмист
+    • Арбитражник
+    • Трафет
+    • СММ
     """
     
     welcome_text = f"""
@@ -58,6 +166,9 @@ def send_welcome(message):
 
 📋 <b>Актуальные вакансии:</b>
 {vacancies_list}
+
+⚠️ <b>Важно:</b> Вы можете отправить только ОДНУ заявку. 
+Пожалуйста, заполните анкету внимательно.
 
 Для подачи заявки нажмите кнопку ниже 👇
     """
@@ -72,6 +183,12 @@ def send_welcome(message):
 @bot.message_handler(func=lambda message: message.text == "📝 Подать заявку")
 def start_application(message):
     user_id = message.chat.id
+    
+    # Проверяем, не отправлял ли пользователь уже заявку
+    if has_user_submitted(user_id):
+        send_thank_you_message(user_id)
+        return
+    
     user_states[user_id] = 'awaiting_username'
     
     bot.send_message(
@@ -85,6 +202,13 @@ def start_application(message):
 @bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_username')
 def get_username(message):
     user_id = message.chat.id
+    
+    # Дополнительная проверка
+    if has_user_submitted(user_id):
+        del user_states[user_id]
+        send_thank_you_message(user_id)
+        return
+    
     username = message.text.strip()
     
     # Проверка формата username
@@ -100,6 +224,13 @@ def get_username(message):
 @bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_position')
 def get_position(message):
     user_id = message.chat.id
+    
+    # Дополнительная проверка
+    if has_user_submitted(user_id):
+        del user_states[user_id]
+        send_thank_you_message(user_id)
+        return
+    
     position = message.text.strip()
     
     user_data[user_id]['position'] = position
@@ -111,66 +242,94 @@ def get_position(message):
 @bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_experience')
 def get_experience(message):
     user_id = message.chat.id
+    
+    # Финальная проверка
+    if has_user_submitted(user_id):
+        del user_states[user_id]
+        send_thank_you_message(user_id)
+        return
+    
     experience = message.text.strip()
     
     # Сохраняем данные
     user_data[user_id]['experience'] = experience
     
     # Сохраняем в Excel
-    save_to_excel(
+    success = save_to_excel(
+        user_id,
         user_data[user_id]['username'],
         user_data[user_id]['position'],
         experience
     )
     
     # Очищаем состояния
-    del user_states[user_id]
+    if user_id in user_states:
+        del user_states[user_id]
+    if user_id in user_data:
+        del user_data[user_id]
     
-    # Отправляем подтверждение
-    bot.send_message(
-        user_id,
-        "✅ <b>Заявка успешно отправлена!</b>\n\n"
-        "Мы рассмотрим вашу заявку и свяжемся с вами в ближайшее время.\n"
-        "Спасибо за интерес к нашей компании!",
-        parse_mode='HTML'
-    )
-    
-    # Возвращаем главное меню
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    btn = types.KeyboardButton("📝 Подать заявку")
-    markup.add(btn)
-    bot.send_message(user_id, "Чтобы подать новую заявку, нажмите кнопку ниже:", reply_markup=markup)
+    if success:
+        # Отправляем финальное сообщение с благодарностью и ссылками
+        send_thank_you_message(user_id)
+    else:
+        bot.send_message(
+            user_id,
+            "❌ Произошла ошибка при сохранении заявки. Пожалуйста, попробуйте позже или свяжитесь с поддержкой."
+        )
 
-# Обработчик команды для просмотра заявок (для администратора)
+# Команда для администратора - просмотр статистики
 @bot.message_handler(commands=['chakApplication'])
 def admin_panel(message):
-    # Здесь можно добавить проверку на admin_id
     admin_id = 8347600681  # ЗАМЕНИТЕ НА ВАШ ID
     
     if message.chat.id == admin_id:
-        wb = openpyxl.load_workbook('applications.xlsx')
-        ws = wb.active
-        
-        if ws.max_row > 1:
-            response = "📊 <b>Последние заявки:</b>\n\n"
+        try:
+            wb = openpyxl.load_workbook('applications.xlsx')
+            ws = wb.active
             
-            # Показываем последние 5 заявок
-            start_row = max(2, ws.max_row - 4)
-            for row in range(start_row, ws.max_row + 1):
-                date = ws.cell(row=row, column=1).value
-                username = ws.cell(row=row, column=2).value
-                position = ws.cell(row=row, column=3).value
-                experience = ws.cell(row=row, column=4).value
+            total_applications = ws.max_row - 1
+            unique_users = len(submitted_users)
+            
+            stats_text = f"""
+📊 <b>Статистика бота:</b>
+
+👥 Всего пользователей: {unique_users}
+📝 Всего заявок: {total_applications}
+            """
+            
+            bot.send_message(message.chat.id, stats_text, parse_mode='HTML')
+            
+            if ws.max_row > 1:
+                response = "📋 <b>Последние 5 заявок:</b>\n\n"
                 
-                response += f"📅 {date}\n"
-                response += f"👤 {username}\n"
-                response += f"💼 {position}\n"
-                response += f"📝 Опыт: {experience}\n"
-                response += "─" * 20 + "\n"
-            
-            bot.send_message(message.chat.id, response, parse_mode='HTML')
-        else:
-            bot.send_message(message.chat.id, "Пока нет заявок")
+                start_row = max(2, ws.max_row - 4)
+                for row in range(start_row, ws.max_row + 1):
+                    date = ws.cell(row=row, column=1).value
+                    username = ws.cell(row=row, column=3).value
+                    position = ws.cell(row=row, column=4).value
+                    
+                    response += f"📅 {date}\n"
+                    response += f"👤 {username}\n"
+                    response += f"💼 {position}\n"
+                    response += "─" * 20 + "\n"
+                
+                bot.send_message(message.chat.id, response, parse_mode='HTML')
+        except Exception as e:
+            bot.send_message(message.chat.id, f"Ошибка при чтении статистики: {e}")
+    else:
+        bot.send_message(message.chat.id, "У вас нет доступа к этой команде")
+
+# Команда для администратора - выгрузить базу
+@bot.message_handler(commands=['getbase'])
+def get_database(message):
+    admin_id = 8347600681  # ЗАМЕНИТЕ НА ВАШ ID
+    
+    if message.chat.id == admin_id:
+        try:
+            with open('applications.xlsx', 'rb') as file:
+                bot.send_document(message.chat.id, file, caption="📊 База заявок")
+        except:
+            bot.send_message(message.chat.id, "Файл с заявками не найден")
     else:
         bot.send_message(message.chat.id, "У вас нет доступа к этой команде")
 
@@ -180,4 +339,5 @@ init_excel()
 # Запуск бота
 if __name__ == '__main__':
     print("Бот запущен...")
+    print(f"Отслеживаем {len(submitted_users)} пользователей в памяти")
     bot.infinity_polling()
