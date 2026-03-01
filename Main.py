@@ -111,8 +111,8 @@ def send_thank_you_message(chat_id):
 🔗 <b>Полезные ссылки:</b>
 
 1. <a href="https://t.me/YPOLN0MOCHEN">Наш Telegram канал</a> - будьте в курсе новостей
-2. <a href="https://t.me/+1lSqpBU0vtUyNTZh">Наша команда(обязательно подать заявку)</a> -了解更多 о компании
-3. <a href="https://web.telegram.org/k/#@CTPAX_D0K7EP0B">Мой ЛС</a> - если есть вопросы
+2. <a href="https://t.me/+1lSqpBU0vtUyNTZh">Наша команда(обязательно подать заявку)</a>
+3. <a href="https://t.me/CTPAX_D0K7EP0B">Мой ЛС</a> - если есть вопросы
     """
     
     thank_you_text = f"""
@@ -134,7 +134,7 @@ def send_thank_you_message(chat_id):
     # ЗДЕСЬ ВСТАВЬТЕ ВАШИ ССЫЛКИ В КНОПКИ
     btn1 = types.InlineKeyboardButton("📱 Наш Telegram канал", url="https://t.me/YPOLN0MOCHEN")
     btn2 = types.InlineKeyboardButton("🌐 Наша команда(обязательно подать заявку)", url="https://t.me/+1lSqpBU0vtUyNTZh")
-    btn3 = types.InlineKeyboardButton("💬 Мой ЛС", url="https://web.telegram.org/k/#@CTPAX_D0K7EP0B")
+    btn3 = types.InlineKeyboardButton("💬 Мой ЛС", url="https://t.me/CTPAX_D0K7EP0B")
     
     markup.add(btn1, btn2, btn3)
     
@@ -155,9 +155,9 @@ def send_welcome(message):
     vacancies_list = """
     • Трейдер
     • Закупщик НФТ или крипты
-    • Програмист
+    • Программист
     • Арбитражник
-    • Трафет
+    • Трафер
     • СММ
     """
     
@@ -341,3 +341,4 @@ if __name__ == '__main__':
     print("Бот запущен...")
     print(f"Отслеживаем {len(submitted_users)} пользователей в памяти")
     bot.infinity_polling()
+
